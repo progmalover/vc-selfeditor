@@ -63,6 +63,7 @@ BEGIN_MESSAGE_MAP(CEditorDlg, CDialog)
 	ON_WM_PAINT()
 	ON_WM_QUERYDRAGICON()
 	//}}AFX_MSG_MAP
+	ON_WM_CTLCOLOR()
 END_MESSAGE_MAP()
 
 
@@ -93,6 +94,12 @@ BOOL CEditorDlg::OnInitDialog()
 		}
 	}
 
+
+	//CWnd  ce;
+	//ce.SubclassDlgItem(IDC_EDIT1, this);
+
+	//ce.Detach();
+	
 	// Set the icon for this dialog.  The framework does this automatically
 	//  when the application's main window is not a dialog
 	SetIcon(m_hIcon, TRUE);			// Set big icon
@@ -119,6 +126,13 @@ void CEditorDlg::OnSysCommand(UINT nID, LPARAM lParam)
 // If you add a minimize button to your dialog, you will need the code below
 //  to draw the icon.  For MFC applications using the document/view model,
 //  this is automatically done for you by the framework.
+
+
+class CSubclassEdit : CWnd{
+public:
+	CSubclassEdit(){};
+	~CSubclassEdit(){};
+};
 
 void CEditorDlg::OnPaint()
 {
@@ -152,3 +166,32 @@ HCURSOR CEditorDlg::OnQueryDragIcon()
 	return static_cast<HCURSOR>(m_hIcon);
 }
 
+
+
+HBRUSH CEditorDlg::OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor)
+{
+	//HBRUSH hbr = CDialog::OnCtlColor(pDC, pWnd, nCtlColor);
+
+	// TODO:  在此更改 DC 的任何特性
+
+	// TODO:  如果默认的不是所需画笔，则返回另一个画笔
+	//return CDialog::OnCtlColor(pDC, pWnd, nCtlColor);
+	if (pWnd->IsKindOf(RUNTIME_CLASS(CLMEditWnd)))
+	{
+		::OutputDebugString(_T("Dlg is required wm_ctlcolor from CLMEditWnd"));
+	}
+
+	if (pWnd->IsKindOf(RUNTIME_CLASS(CEdit)))
+	{
+		::OutputDebugString(_T("Dlg is required wm_ctlcolor from CEdit"));
+	}
+
+	if (pWnd->IsKindOf(RUNTIME_CLASS(CEditorDlg)))
+	{
+		::OutputDebugString(_T("Dlg get wm_ctlcolor from CEditorDlg"));
+		 
+		return (HBRUSH)::GetStockObject(WHITE_BRUSH);
+		 
+	}
+	return NULL;
+}

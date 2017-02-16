@@ -4,18 +4,21 @@
 #include "stdafx.h"
 #include "Editor.h"
 #include "LMEditWnd.h"
+#include "UIGlobel.h"
 #define ID_COPY  2222 //copy string
 #define ID_PARST 3333 // parst string
 #define ID_UNDO  334
 #define ID_REDO  335
 // CLMEditWnd
+
+#define MARGIN_PAD 2
 class wndRegister
 {
 public:
 	wndRegister()
 	{
 		strClass = AfxRegisterWndClass(
-			  CS_VREDRAW | CS_HREDRAW,
+			CS_VREDRAW | CS_HREDRAW | CS_DBLCLKS,
 			  ::LoadCursor(NULL, IDC_ARROW),
 			  (HBRUSH) ::GetStockObject(WHITE_BRUSH),
 			  ::LoadIcon(NULL, IDI_APPLICATION));
@@ -58,10 +61,10 @@ BEGIN_MESSAGE_MAP(CLMEditWnd, CWnd)
     ON_COMMAND(ID_PARST,OnParst)
 	ON_COMMAND(ID_UNDO,OnUndo)
     ON_COMMAND(ID_REDO,OnRedo)
-	/*ON_BN_CLICKED(ID_UNDO,OnUndo)
-    ON_BN_CLICKED(ID_REDO,OnRedo)*/
+	
     ON_UPDATE_COMMAND_UI(ID_COPY,OnUpdateCopy)
     ON_UPDATE_COMMAND_UI(ID_PARST,OnUpdateParst)
+	ON_WM_LBUTTONDBLCLK()
 END_MESSAGE_MAP()
 
 
@@ -89,17 +92,30 @@ void CLMEditWnd::OnContextMenu(CWnd* /*pWnd*/, CPoint point)
 	// TODO: Add your message handler code here
     CMenu contextMenu;
     contextMenu.CreatePopupMenu();
-    contextMenu.AppendMenu(MF_STRING|MF_POPUP,ID_COPY,"Copy");
-    contextMenu.AppendMenu(MF_STRING|MF_POPUP,ID_PARST,"Parste");
+    contextMenu.AppendMenu(MF_STRING|MF_POPUP,ID_COPY,_T("Copy"));
+    contextMenu.AppendMenu(MF_STRING|MF_POPUP,ID_PARST,_T("Parste"));
     contextMenu.TrackPopupMenu(TPM_LEFTALIGN |TPM_RIGHTBUTTON,point.x,point.y,this);
+}
+
+
+void CLMEditWnd::OnLButtonDblClk(UINT nFlags, CPoint point)
+{
+	// TODO:  在此添加消息处理程序代码和/或调用默认值
+	this->m_txtEditor.selectAll();
+	this->SetCaretPos(this->GetCaretPos());
+	this->Invalidate();
+	CWnd::OnLButtonDblClk(nFlags, point);
 }
 
 
 BOOL CLMEditWnd::PreTranslateMessage(MSG* pMsg)
 {
 	// TODO: Add your specialized code here and/or call the base class
+	
+
 	if(pMsg->message >= WM_KEYFIRST && pMsg->message <= WM_KEYLAST)
 	{
+
 		DWORD dwRet = ::TranslateAccelerator(GetSafeHwnd(),m_cmdAccel,pMsg);
 		TRACE("TranslateAccelerator dwRet :%d ,err %d\n",dwRet,GetLastError());
 	}
@@ -114,14 +130,17 @@ void CLMEditWnd::OnSetFocus(CWnd* pOldWnd)
 	{
 		m_bcaret = true;
 		CDC *pDC = GetDC();
+		pDC->SaveDC();
+		pDC->SelectObject(_uiGlobalData .GetGFont());
 		int ch = pDC->GetTextExtent(_T("H"),1).cy;
 		::CreateCaret(GetSafeHwnd(),NULL,1,ch);
+		pDC->RestoreDC(-1);
 	}
 
 	ShowCaret();
 
 	CPoint pt = GetCaretPos();
-	if(pt.x == 0)pt.x += 2;
+	if (pt.x == 0)pt.x += MARGIN_PAD;
 	this->SetCaretPos(pt);
 	
 	this->Invalidate();
@@ -154,17 +173,22 @@ void CLMEditWnd::OnLButtonDown(UINT nFlags, CPoint point)
 
 	CRect rc;
 	GetClientRect(&rc);
-	while(pt.x > rc.right-3)
+	while (pt.x > rc.right - MARGIN_PAD)
 	{
 		m_txtEditor.scrollRight();
 		pt = m_txtEditor.getIndexPos(i);
 	}
 	m_txtEditor.setCaretIndex(i);
+
+	if (pt.x <= 0)
+		pt.x = MARGIN_PAD;
+
 	this->SetCaretPos(CPoint(pt.x,0));
 	m_bDrag = false;
 	m_txtEditor.resetDrag();
 	::SetCapture(this->GetSafeHwnd());
 	Invalidate();
+	
 	CWnd::OnLButtonDown(nFlags, point);
 }
 
@@ -180,7 +204,7 @@ void CLMEditWnd::OnLButtonUp(UINT nFlags, CPoint point)
 void CLMEditWnd::OnMouseMove(UINT nFlags, CPoint point)
 {
 	//
-	if((nFlags & MK_LBUTTON) == MK_LBUTTON && m_txtEditor.GetTxtLen())
+	if((nFlags & MK_LBUTTON) == MK_LBUTTON && m_txtEditor.GetTxtLen()>0)
 	{
 		if(false == m_bDrag)
 		{
@@ -188,7 +212,9 @@ void CLMEditWnd::OnMouseMove(UINT nFlags, CPoint point)
 			m_bDrag = true;
 		}
 		int i = m_txtEditor.mapPointToIndex(point);
-		m_txtEditor.setCaretIndex(i);//set drag index in string buffer.
+
+		TRACE1("move index:%d\n",i);
+		m_txtEditor.setCaretIndex(i);//set current caret pos.
 		
 		SetCaretPos(GetCaretPos());
 		Invalidate();
@@ -197,7 +223,7 @@ void CLMEditWnd::OnMouseMove(UINT nFlags, CPoint point)
 	CWnd::OnMouseMove(nFlags, point);
 }
 
-void CLMEditWnd::InputChar(char nChar)
+void CLMEditWnd::InputChar(TCHAR nChar)
 {
     m_txtEditor.enterChar(nChar);
     while(!IsVisibleIndex(m_txtEditor.getCaretIndex()))
@@ -250,16 +276,22 @@ void CLMEditWnd::OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags)
 		case VK_LEFT:
 			{
 				m_txtEditor.MoveCaret(LEFT);
-				if(!IsVisibleIndex(m_txtEditor.getCaretIndex()))
+
+				if (m_txtEditor.canScrollLeft())
 					m_txtEditor.scrollLeft();
+
 				SetCaretPos(GetCaretPos());
 				Invalidate();
 			}
 			return;
+
 		case VK_RIGHT:
 			m_txtEditor.MoveCaret(RIGHT);
-			if(!IsVisibleIndex(m_txtEditor.getCaretIndex()))
+
+			//if (m_txtEditor.canScrollRight())
+			if (!IsVisibleIndex(m_txtEditor.getCaretIndex()))
 				m_txtEditor.scrollRight();
+
 			SetCaretPos(GetCaretPos());
 			Invalidate();
 			return;
@@ -282,7 +314,7 @@ CPoint CLMEditWnd::GetCaretPos()
 	CPoint pt(0,0);
 	pt = m_txtEditor.getIndexPos(m_txtEditor.getCaretIndex()); // index to client pos.
 	GetClientRect(cliRc);
-	if(pt.x == 0) pt.x = 2;
+	if(pt.x < 0) pt.x = MARGIN_PAD;
 	if(pt.x > cliRc.right)
 		pt.x = cliRc.right - 5;
 	return pt;
@@ -294,12 +326,27 @@ UINT CLMEditWnd::OnGetDlgCode()
 	return CWnd::OnGetDlgCode()|DLGC_WANTARROWS|DLGC_WANTCHARS;
 }
 
+
 int CLMEditWnd::OnCreate(LPCREATESTRUCT lpCreateStruct)
 {
 	if (CWnd::OnCreate(lpCreateStruct) == -1)
 		return -1;
+
+	CFont *cf = CFont::FromHandle((HFONT)::GetStockObject(ANSI_FIXED_FONT));
+	/*
+	LOGFONT lgf;
+	cf->GetLogFont(&lgf);
+	_tcscpy(lgf.lfFaceName , _T("新宋体"));
+
+	CFont *pnft = new CFont(); 
+	pnft->CreatePointFontIndirect(&lgf);
+	*/
+	this->SetFont(cf ,1);
+   
+
 	CDC *pDC = GetDC();
-	int ch = pDC->GetTextExtent(_T("H"),1).cy;
+
+	int ch = pDC->GetTextExtent(_T("h"),1).cy;
 	::CreateCaret(GetSafeHwnd(),NULL,1,ch);
 	ReleaseDC(pDC);
 	// TODO:  Add your specialized creation code here
@@ -320,12 +367,12 @@ bool  CLMEditWnd::IsVisibleIndex(int i)
 {
 	CPoint pt(0,0);
 	pt = m_txtEditor.getIndexPos(i);
-	if(pt.x < 0)
+	if(pt.x <= 0) //Ramain 2 pixels width margin on left.
 		return false;
 
 	CRect cliRect;
 	GetClientRect(cliRect);
-	if(pt.x > cliRect.right)
+	if(pt.x > (cliRect.right -3)) //Remain 3 pixels width margin on right.
 		return false;
 	return true;
 }
@@ -337,24 +384,67 @@ void CLMEditWnd::OnPaint()
 	if(m_txtEditor.GetTxtLen() <= 0)
 		return;
 	
-	const char *lpStr = m_txtEditor.GetVisibleString();
+	const TCHAR *lpStr = m_txtEditor.GetVisibleString();
+	int ise = m_txtEditor.GetVisiblilityEnabledLen();
+	int icn = _tcslen(lpStr);
+	ise = (ise <= _tcslen(lpStr)) ? ise : icn;
 	CRect rc(0,0,0,0);
-	dc.DrawText((LPTSTR)lpStr,strlen(lpStr),&rc,DT_CALCRECT|DT_SINGLELINE|DT_LEFT);
-	dc.DrawText(lpStr,strlen(lpStr),&rc,DT_NOCLIP|DT_LEFT);
-	if(CWnd::GetFocus() == this)
-	if(m_txtEditor.hasSelection())
+
+	dc.SaveDC();
+	dc.SelectObject(_uiGlobalData.GetGFont());
+
+	dc.DrawText((LPTSTR)lpStr, ise, &rc, DT_CALCRECT | DT_SINGLELINE | DT_LEFT | DT_NOCLIP);
+	dc.DrawText(lpStr, ise, &rc, DT_LEFT | DT_NOCLIP);
+
+	if (CWnd::GetFocus() == this)
 	{
-		int ss,se;
-		const char *pbuf = m_txtEditor.getSelection(ss,se);
-		dc.SaveDC();
-		dc.SetBkColor(::GetSysColor(COLOR_HOTLIGHT));
-		dc.SetTextColor(::GetSysColor(COLOR_HIGHLIGHTTEXT)); 
-        CPoint offPos = m_txtEditor.getIndexPos(ss);
-		dc.DrawText(pbuf,se-ss,&rc,DT_CALCRECT);
-        rc.OffsetRect(offPos.x,0);
-		dc.DrawText(pbuf,se-ss,&rc,DT_NOCLIP|DT_LEFT);
-		dc.RestoreDC(-1);	
+		if (m_txtEditor.hasSelection())
+		{
+			int ss, se;
+			const TCHAR *pbuf = m_txtEditor.getSelection(ss, se);
+			TRACE2("ss:%d,se:%d",ss,se);
+			
+			LM_TXTSTRUCTION txt = m_txtEditor.getText();
+			/*if ((se - ss) > m_txtEditor.GetVisiblilityEnabledLen() && txt.lm_vStart <= ss)
+			{
+				pbuf += ss - txt.lm_vStart;
+			}*/
+			
+			dc.SetBkColor(::GetSysColor(COLOR_HOTLIGHT));
+			dc.SetTextColor(::GetSysColor(COLOR_HIGHLIGHTTEXT));
+
+			int ibound = se - ss;
+			int offss = ss;
+			if (m_txtEditor.getDragDirector() == 0) //drag to right
+			{
+				int ive = ise + txt.lm_vStart;
+				
+				if (m_txtEditor.isSelectAllMode()) //already select all
+				{
+					offss = txt.lm_vStart;
+					pbuf += offss;
+				}else
+				if (se > ive)
+				{
+					offss -= (se - ive) ;
+					if (offss <= 0)
+					{
+						pbuf -= offss;
+						offss = 0;
+					}
+
+				}
+			}
+			ibound = min(ibound, ise);
+			CPoint offPos = m_txtEditor.getIndexPos(offss);
+			dc.DrawText(pbuf, ibound, &rc, DT_CALCRECT);
+			rc.OffsetRect(offPos.x, 0);
+			dc.DrawText(pbuf, ibound, &rc, DT_NOCLIP | DT_LEFT);
+			 
+		}
 	}
+
+	dc.RestoreDC(-1);
 }
 
 void CLMEditWnd::OnUpdateCopy(CCmdUI *pIt)
@@ -390,9 +480,9 @@ void CLMEditWnd::OnCopy()
     }
 
     int ss,se;
-    const char *pTxtData = m_txtEditor.getSelection(ss,se);
+    const TCHAR *pTxtData = m_txtEditor.getSelection(ss,se,true);
     int nlen = se - ss;
-    HGLOBAL  hglbCopy = GlobalAlloc(GMEM_SHARE,nlen + 1); 
+    HGLOBAL  hglbCopy = GlobalAlloc(GMEM_SHARE,(nlen + 1)*sizeof(TCHAR)); 
     if (hglbCopy == NULL) 
     { 
         CloseClipboard(); 
@@ -400,8 +490,16 @@ void CLMEditWnd::OnCopy()
     } 
 
     char *pBuffer = (char *)GlobalLock(hglbCopy); 
-    memcpy(pBuffer, pTxtData,nlen );
-    pBuffer[nlen] =  0;    // null character 
+
+#ifdef _UNICODE
+	std::string str = CW2A(pTxtData).m_psz;
+	int leng = str.length();
+    memcpy(pBuffer,str.c_str(),str.length());
+#else
+	memcpy(pBuffer, pTxtData,nlen );
+#endif
+
+    pBuffer[leng] =  0;    // null character 
     GlobalUnlock(hglbCopy); 
 
     // Place the handle on the clipboard. 
@@ -422,13 +520,23 @@ void CLMEditWnd::OnParst()
     if (hglb != NULL) 
     { 
         char *lptstr = (char *)GlobalLock(hglb); 
-        if (lptstr != NULL) 
-        { 
-            for(int i = 0;i < strlen(lptstr);i++)
-               InputChar(lptstr[i]);
-     
-            GlobalUnlock(hglb); 
-        } 
+#ifdef  _UNICODE
+		CString wStr = CA2W(lptstr).m_psz;
+		for (int i = 0; i < wStr.GetLength(); i++){
+				InputChar(wStr.GetAt(i));
+		}
+
+#else
+		if (lptstr != NULL)
+		{
+			for (int i = 0; i < strlen(lptstr); i++)
+				InputChar(lptstr[i]);
+
+		}
+
+#endif
+    
+		GlobalUnlock(hglb);
     } 
     CloseClipboard(); 
     Invalidate();
@@ -473,6 +581,7 @@ bool CLMEditWnd::lm_txtEditor::delPreChar(bool bTrace)
 //////////////////////////////////////////////////////////////////////////////////////////////////////////
 //lm_txtEditor
 //delete last selection range.
+ 
 bool CLMEditWnd::lm_txtEditor::delSelection(bool bTrace)
 {
 	if(-1 == m_txt.lm_dragOver) //no selection
@@ -515,26 +624,39 @@ int CLMEditWnd::lm_txtEditor::mapPointToIndex(POINT pos)
 	if(m_txt.lm_vStart >= m_txt.lm_txtBuffer.GetLength())
 		return 0;
 	
-	const char * txt_buf = m_txt.lm_txtBuffer.GetBuffer() + m_txt.lm_vStart;
-	int bufLen = strlen(txt_buf);
+	const TCHAR * txt_buf = m_txt.lm_txtBuffer.GetBuffer() + m_txt.lm_vStart;
+	int bufLen = _tcslen(txt_buf);
 
 	CDC dc;
 	dc.Attach(::GetDC(m_CmdEngin.getOwnerWnd()->GetSafeHwnd()));
+	dc.SaveDC();
+	dc.SelectObject(_uiGlobalData.GetGFont());
 	//position is at end of text.
-	if(pos.x >= dc.GetTextExtent(txt_buf,bufLen).cx)
-		return  m_txt.lm_txtBuffer.GetLength();
 
-    int chW = dc.GetTextExtent("H",1).cx / 2;
+	int index = 0;
+	if (pos.x >= dc.GetTextExtent(txt_buf, bufLen).cx)
+	{
+		//dc.RestoreDC(-1);
+		index =  m_txt.lm_txtBuffer.GetLength();
+		goto _Exit;
+	}
+    int chW = dc.GetTextExtent(_T("h"),1).cx / 2;
 
 	//find compatible index.
 	for(int i = 1;i < bufLen;i++)
 	{
 		int x = dc.GetTextExtent(txt_buf,i).cx;
-		if(abs(x - pos.x) <= chW)
-			return i + m_txt.lm_vStart;
+		if (abs(x - pos.x) <= chW)
+		{
+			//dc.RestoreDC(-1);
+			index =  i + m_txt.lm_vStart;
+			goto _Exit;
+		}
 	}
 
-	return 0;
+	_Exit:
+		dc.RestoreDC(-1);
+	return index;
 }
 
 //移动光标,必要时带动字串移动
@@ -555,10 +677,37 @@ bool CLMEditWnd::lm_txtEditor::MoveCaret(int tag)
 	return true;
 }
 
-const char * CLMEditWnd::lm_txtEditor::GetVisibleString()
+const TCHAR * CLMEditWnd::lm_txtEditor::GetVisibleString()
 {
-	const char *ch_buff = m_txt.lm_txtBuffer.GetBuffer() + m_txt.lm_vStart;
+	const TCHAR *ch_buff = m_txt.lm_txtBuffer.GetBuffer() + m_txt.lm_vStart;
 	return ch_buff; 
+}
+
+const int CLMEditWnd::lm_txtEditor::GetVisiblilityEnabledLen()
+{
+	CLMEditWnd *plmew = m_CmdEngin.getOwnerWnd();
+	if (NULL == plmew)
+		return 0;
+
+	CRect  cwRect;
+	int    count = 0;
+	plmew->GetClientRect(&cwRect);
+
+	CDC *pDC = plmew->GetDC();
+	pDC->SaveDC();
+
+	TEXTMETRIC tm;
+	pDC->GetTextMetrics(&tm);
+	//int cw = pDC->GetTextExtent(_T("H"),1).cx;
+	//int cw2 = pDC->GetTextExtent(_T("HH"), 2).cx;
+	cwRect.DeflateRect(2, 0);
+	count = cwRect.Width() / (tm.tmAveCharWidth + 1) ;
+
+	TRACE2( "clirect width:%d, enable visibility:%d \n",cwRect.Width(),count);
+
+	pDC->RestoreDC(-1);
+	
+	return count;
 }
 //
 //get position according to client window .
@@ -566,30 +715,37 @@ const char * CLMEditWnd::lm_txtEditor::GetVisibleString()
 POINT CLMEditWnd::lm_txtEditor::getIndexPos(int i)
 {
 	POINT pt = {0,0};
-	int iRange = i - m_txt.lm_vStart;
+
+	int vStart = ((m_txt.lm_vStart < 0) ? 0 : m_txt.lm_vStart);
+	int iRange = i - vStart;
 
 	//ASSERT(iRange >= 0 );
-	if(iRange < 0)
+	if(iRange <= 0)
 	{
-		pt.x = -1;
+		//pt.x = -1;
 		return pt;
 	}
 
-	if(iRange  <= 0)
-		return pt;
-	const char *ch_buff = m_txt.lm_txtBuffer.GetBuffer() + m_txt.lm_vStart;
-	
+	 
 	CDC dc;
 	dc.Attach(::GetDC(m_CmdEngin.getOwnerWnd()->GetSafeHwnd()));
+	dc.SaveDC();
+	dc.SelectObject(_uiGlobalData.GetGFont());
+	
+	const TCHAR *ch_buff = m_txt.lm_txtBuffer.GetBuffer() + vStart;
 	if(i >= m_txt.lm_txtBuffer.GetLength())
 	{
-		pt.x = dc.GetTextExtent(ch_buff,strlen(ch_buff)).cx;
-		return pt;
+		pt.x = dc.GetTextExtent(ch_buff,_tcslen(ch_buff)).cx;
+		//return pt;
+		goto _Exit;
 	}
 
 	pt.x = dc.GetTextExtent(ch_buff,iRange).cx;
-	if(pt.x == 0)
-		pt.x += 2;
+	if(pt.x <= 0)
+		pt.x = MARGIN_PAD;
+
+	_Exit:
+	dc.RestoreDC(-1);
 	return pt; 
 }
 
@@ -612,29 +768,53 @@ void  CLMEditWnd::lm_txtEditor::setDragPosIndex(int index)//set drag end index
 	m_txt.lm_dragOver = index;
 }
 
+bool  CLMEditWnd::lm_txtEditor::canScrollLeft()
+{
+
+	return ((m_txt.lm_vStart >= 1) && ((getCaretIndex() - m_txt.lm_vStart) <= 0));
+}
+
 void  CLMEditWnd::lm_txtEditor::scrollLeft()  //called move left one char.
 {
 	m_txt.lm_vStart--;
 }
+
+bool  CLMEditWnd::lm_txtEditor::canScrollRight()
+{
+	int iCaret = getCaretIndex();
+	return ((m_txt.lm_vStart + iCaret) < m_txt.lm_txtBuffer.GetLength()) ;
+}
+
 void  CLMEditWnd::lm_txtEditor::scrollRight() //called move right one char.
 {
 	m_txt.lm_vStart++;
 }
 
-bool  CLMEditWnd::lm_txtEditor::enterChar(char ch,bool bTrace)//put char to caret location 
+bool  CLMEditWnd::lm_txtEditor::enterChar(TCHAR ch,bool bTrace)//put char to caret location 
 {
 	this->delSelection(bTrace);
 	if(bTrace)
 	m_CmdEngin.BeginEnterChar(ch);
+
+	int ins = m_txt.lm_caretPoint;
+
+	//ins += m_txt.lm_vStart;
+
 	if(m_txt.lm_txtBuffer.GetLength() -1 <= m_txt.lm_caretPoint)
 		m_txt.lm_txtBuffer += ch;
 	else
-		m_txt.lm_txtBuffer.Insert(m_txt.lm_caretPoint,ch);
+		m_txt.lm_txtBuffer.Insert(ins, ch);
+	
 	m_txt.lm_caretPoint++;
     m_txt.lm_dragOver = -1;
 	if(bTrace)
 	m_CmdEngin.EndEnterChar();
 	return true;
+}
+
+bool  CLMEditWnd::lm_txtEditor::isSelectAllMode()
+{
+	return (this->m_txt.lm_dragOver == 0 && this->m_txt.lm_caretPoint == this->m_txt.lm_txtBuffer.GetLength());
 }
 
 bool  CLMEditWnd::lm_txtEditor::hasSelection()//some chars in drag option range
@@ -661,7 +841,13 @@ CString  CLMEditWnd::lm_txtEditor::getText(int index,int num)
 	
 	return strText;
 }
-const char *  CLMEditWnd::lm_txtEditor::getSelection(int &iStart,int &iEnd)//get selection range
+
+int  CLMEditWnd::lm_txtEditor::getDragDirector()
+{
+	return (m_txt.lm_caretPoint > m_txt.lm_dragOver) ? 0 : 1;
+}
+
+const TCHAR *  CLMEditWnd::lm_txtEditor::getSelection(int &iStart,int &iEnd ,bool bsub)//get selection range
 {
 	iStart = 0;
 	iEnd = 0;
@@ -670,11 +856,30 @@ const char *  CLMEditWnd::lm_txtEditor::getSelection(int &iStart,int &iEnd)//get
 		return false;
 	iStart = min(m_txt.lm_caretPoint,m_txt.lm_dragOver);
 	iEnd = max(m_txt.lm_caretPoint,m_txt.lm_dragOver);
-	return (m_txt.lm_txtBuffer.GetBuffer() + iStart);
+
+	if (bsub)
+	{
+		static CString substr;
+
+		substr.Empty();
+
+		for (int i = iStart; i < iEnd; i++)
+		{
+			substr += m_txt.lm_txtBuffer.GetAt(i);
+		}
+
+		return substr;
+	}
+	else
+		return (m_txt.lm_txtBuffer.GetBuffer() + iStart);
 }
 
 bool  CLMEditWnd::lm_txtEditor::selectAll() //select all char
 {
+//his->hasSelection();
+	m_txt.lm_dragOver = 0;
+	m_txt.lm_caretPoint = m_txt.lm_txtBuffer.GetLength();
+	m_txt.lm_vStart = max(m_txt.lm_caretPoint - this->GetVisiblilityEnabledLen(), 0);
 	return true;
 }
 
@@ -703,6 +908,7 @@ bool  CLMEditWnd::lm_txtCmdEngin::enter_cmd::reexec()
 	pWnd->Invalidate();
 	return true;
 }
+
 bool CLMEditWnd::lm_txtCmdEngin::enter_cmd::unexec()
 {
 	CLMEditWnd *pWnd = m_pEngin->getOwnerWnd();
@@ -823,7 +1029,7 @@ void CLMEditWnd::lm_txtCmdEngin::ClearStack(cmd_stack *stack)
 	
 }
 //record and merger cmd information in un_stack.
-void CLMEditWnd::lm_txtCmdEngin::BeginEnterChar(char nChar)
+void CLMEditWnd::lm_txtCmdEngin::BeginEnterChar(TCHAR nChar)
 {
 	//first to clear reStack,before new 'cmd'.
 	ClearStack(&m_reStack);

@@ -11,6 +11,8 @@
 //
 #include <string>
 #include <stack>
+#include <vector>
+using namespace std;
 
 class CLMEditWnd : public CWnd
 {
@@ -20,13 +22,19 @@ class CLMEditWnd : public CWnd
 	//three months ago ,i implement 'cmd' system for "magicview controller" ,about eight thousant
 	//codes,so very hate 'cmd'.
 	//
-	#define CMD_CHAR 1
-	#define CMD_DEL 2
+	#define CMD_CHAR	1
+	#define CMD_DEL		2
 	class lm_txtEditor;
 	class lm_txtCmdEngin 
 	{
 	public:
-		class cmd
+		template<class T>
+		class _group{
+		protected:
+			vector<T *> m_group;
+		};
+
+		class cmd : public _group<cmd>
 		{
 		public:
 			virtual ~cmd(){};
@@ -105,7 +113,7 @@ class CLMEditWnd : public CWnd
 		lm_txtEditor *getEditor(){return &m_pOwner->m_txtEditor;};
 		void ClearStack(cmd_stack *pstack);
 		//command engin helper functions.
-		void BeginEnterChar(char nchar);
+		void BeginEnterChar(TCHAR nchar);
 		void EndEnterChar();
 
 		void BeginDelChar(int index,int num);
@@ -130,11 +138,16 @@ class CLMEditWnd : public CWnd
 	 int			lm_vStart; //visible start index of char in string buffer.
 	 int			lm_caretPoint;  //caret point index for enter char
 	 int			lm_dragOver;   // drag over point index.
+	 int			lm_chH;//char hight
+	 int			lm_chW;//char width
+
 	 CString        lm_txtBuffer;   //hold chars.
 	 lm_txtStruction()
 	 {
 		lm_vStart = 0;
 		lm_caretPoint = 0;
+		lm_chH = 0;
+		lm_chW = 0;
 		lm_dragOver = -1;//-1,is a new drag option.min is zero,and max is text buffer length.
 	 };
 	}LM_TXTSTRUCTION;
@@ -149,13 +162,19 @@ class CLMEditWnd : public CWnd
 		void resetDrag(){m_txt.lm_dragOver = -1;};
 		int  setCaretIndex(int i);
 		int  getCaretIndex();
+		int  getDragDirector();
+		const int  GetVisiblilityEnabledLen();
 		void setDragPosIndex(int index); //set drag over index
+		
 		void scrollLeft();  //called move left one char.
 		void scrollRight(); //called move right one char.
-		bool enterChar(char ch,bool bTrace = true);//put char to caret location 
+		bool canScrollLeft();
+		bool canScrollRight();
+		bool enterChar(TCHAR ch,bool bTrace = true);//put char to caret location 
 
+		bool  isSelectAllMode();
 		bool hasSelection();//some chars in drag option range
-		const char *getSelection(int &iStart,int &iEnd);//get selection range
+		const TCHAR *getSelection(int &iStart,int &iEnd,bool bsub = false);//get selection range
         bool delPreChar(bool bTrace = true);
 		bool delSelection(bool bTrace = true);
 		bool selectAll(); //select all char
@@ -163,13 +182,14 @@ class CLMEditWnd : public CWnd
 		CString getText(int index,int num);
 		bool MoveCaret(int tag);
 		int  GetTxtLen(){return m_txt.lm_txtBuffer.GetLength();};
-		const char *GetVisibleString();
+		const TCHAR *GetVisibleString();
 		//map index to local position.
 		int mapPointToIndex(POINT pos);
 	    POINT getIndexPos(int i); // index to client pos.
 
 		//suport command engin
 		void setLmWnd(CLMEditWnd *pLmEdit){m_CmdEngin.bind(pLmEdit);};
+		LM_TXTSTRUCTION getText(){ return m_txt; };
 	protected:
 		LM_TXTSTRUCTION  m_txt;
 		lm_txtCmdEngin   m_CmdEngin;
@@ -182,7 +202,7 @@ protected:
 	lm_txtEditor   m_txtEditor;
 	bool		   m_bcaret;
 	HACCEL		   m_cmdAccel;  
-	bool			m_bDrag;
+	bool		   m_bDrag;
 public:
 	CLMEditWnd();
 	virtual ~CLMEditWnd();
@@ -193,9 +213,10 @@ protected:
 	virtual BOOL PreCreateWindow(CREATESTRUCT& cs);
 	
 	CPoint GetCaretPos();
+ 
 	void  AdjustCaret();
 	bool  IsVisibleIndex(int i);
-    void  InputChar(char nChar);
+    void  InputChar(TCHAR nChar);
     void  OnBackSpace();
 public:
     BOOL CreateEdit(LPCTSTR lpStrName,CRect rect,CWnd *pOwner=NULL,DWORD dwID=NULL);
@@ -218,6 +239,7 @@ public:
 	afx_msg void OnRedo();
     afx_msg void OnUpdateCopy(CCmdUI *pIt);
     afx_msg void OnUpdateParst(CCmdUI *pIt);
+	afx_msg void OnLButtonDblClk(UINT nFlags, CPoint point);
 };
 
 
